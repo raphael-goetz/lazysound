@@ -36,11 +36,15 @@ func TrackTable(s style.Styles, tracks []api.Track, sel int, focused bool, width
 	lines := []string{header, sep}
 	for i := start; i < end; i++ {
 		t := tracks[i]
+		bpm := "-"
+		if t.Bpm > 0 {
+			bpm = strconv.Itoa(int(float64(t.Bpm) + 0.5))
+		}
 		row := fmt.Sprintf(format,
 			math.Truncate(t.Title, wTitle),
 			math.Truncate(t.User.Username, wArtist),
 			math.Truncate(Time(t.Duration), wDuration),
-			math.Truncate(strconv.Itoa(t.Bpm), wBPM),
+			math.Truncate(bpm, wBPM),
 		)
 
 		if i == sel {

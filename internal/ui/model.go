@@ -1,13 +1,52 @@
 package ui
 
 import (
+	"fmt"
+	"math/rand"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/raphael-goetz/lazysound/internal/api"
-	"github.com/raphael-goetz/lazysound/internal/math"
-	"github.com/raphael-goetz/lazysound/internal/ui/component"
+	"github.com/raphael-goetz/lazysound/internal/daemon"
 	"github.com/raphael-goetz/lazysound/internal/ui/style"
 )
+
+type SearchMode int
+
+const (
+	SearchTracks SearchMode = iota
+	SearchPlaylists
+)
+
+type ListKind int
+
+const (
+	ListNone ListKind = iota
+	ListTracks
+	ListPlaylists
+)
+
+type ActionKind int
+
+const (
+	ActionNone ActionKind = iota
+	ActionCreatePlaylist
+	ActionRenamePlaylist
+	ActionDeletePlaylist
+	ActionLikePlaylist
+	ActionUnlikePlaylist
+	ActionLikeTrack
+	ActionUnlikeTrack
+	ActionAddToPlaylist
+	ActionRemoveFromPlaylist
+)
+
+type ActionItem struct {
+	Label string
+	Kind  ActionKind
+}
 
 type Model struct {
 	w, h int
@@ -17,174 +56,157 @@ type Model struct {
 	navItems []string
 	navIdx   int
 
-	playlists   []api.Playlist
-	playlistIdx int
+	// Collections (My / Liked)
+	myPlaylists    []api.Playlist
+	likedPlaylists []api.Playlist
+	playlistIdx    int
 
-	tracks   []api.Track
-	trackIdx int
+	myTracks    []api.Track
+	likedTracks []api.Track
+	trackIdx    int
+
+	// Playlist drill-down view state
+	playlistTracks        bool
+	playlistTracksSection int
+
+	// Search state
+	searchMode      SearchMode
+	searchQuery     string
+	searchActive    bool
+	searchInput     textinput.Model
+	searchLoading   bool
+	searchErr       string
+	searchTracks    []api.Track
+	searchPlaylists []api.Playlist
+
+	// Authenticated user
+	currentUser api.User
+
+	// Liked cache (to render like/unlike actions quickly)
+	likedTrackIDs    map[int]bool
+	likedPlaylistIDs map[int]bool
+
+	// Status line (rendered in player bar)
+	status string
+
+	// Quick actions state
+	actionMenuActive    bool
+	actionItems         []ActionItem
+	actionIdx           int
+	actionPromptActive  bool
+	actionPrompt        textinput.Model
+	actionPromptKind    ActionKind
+	actionConfirmActive bool
+	actionConfirmKind   ActionKind
+	actionPickActive    bool
+	actionPickKind      ActionKind
+	actionPickIdx       int
+
+	api   *api.ApiClient
+	token string
+
+	// Playback state
+	daemon             *daemon.Client
+	volume             int
+	nowPlaying         *api.Track
+	playSession        int
+	playStart          time.Time
+	playElapsed        int64
+	playTotal          int64
+	greeting           string
+	playPending        bool
+	playPaused         bool
+	seekStepSeconds    int
+	shuffleEnabled     bool
+	repeatEnabled      bool
+	keymap             Keymap
+	playlistPlayActive bool
+	playlistPlayTracks []api.Track
+	playlistPlayIdx    int
+	trackDetailFetched map[int]bool
 
 	styles style.Styles
 
 	err string
 }
 
-func NewModel(tracks []api.Track, playlists []api.Playlist) Model {
+func NewModel(myTracks []api.Track, likedTracks []api.Track, myPlaylists []api.Playlist, likedPlaylists []api.Playlist, me *api.User, client *api.ApiClient, token string, daemonAddr string, keymap Keymap, styles style.Styles) Model {
+	in := textinput.New()
+	in.Prompt = "Search: "
+	in.Placeholder = "type and press enter"
+	in.CharLimit = 120
+	in.Width = 40
+	ap := textinput.New()
+	ap.Prompt = "> "
+	ap.CharLimit = 120
+	ap.Width = 40
+
+	greetings := []string{
+		"Tune in, %s",
+		"Happy listening, %s",
+		"Welcome back, %s",
+		"Good vibes, %s",
+		"Enjoy the mix, %s",
+		"Stay loud, %s",
+	}
+
+	lt := make(map[int]bool)
+	for _, t := range likedTracks {
+		if t.ID > 0 {
+			lt[t.ID] = true
+		}
+	}
+	lp := make(map[int]bool)
+	for _, p := range likedPlaylists {
+		if p.ID > 0 {
+			lp[p.ID] = true
+		}
+	}
+
+	var user api.User
+	if me != nil {
+		user = *me
+	}
+	name := "Listener"
+	if strings.TrimSpace(user.Username) != "" {
+		name = user.Username
+	}
+	rand.Seed(time.Now().UnixNano())
+	greeting := fmt.Sprintf(greetings[rand.Intn(len(greetings))], name)
+
+	dc := daemon.NewClient(daemonAddr)
+
 	return Model{
 		focus: FocusList,
 		navItems: []string{
 			"Search",
 			"My Playlists",
+			"My Tracks",
 			"Liked Playlists",
 			"Liked Tracks",
 		},
-		navIdx:    1,
-		tracks:    tracks,
-		playlists: playlists,
-		styles:    style.NewStyles(),
+		navIdx:             1,
+		myTracks:           myTracks,
+		likedTracks:        likedTracks,
+		myPlaylists:        myPlaylists,
+		likedPlaylists:     likedPlaylists,
+		searchMode:         SearchTracks,
+		searchInput:        in,
+		actionPrompt:       ap,
+		currentUser:        user,
+		likedTrackIDs:      lt,
+		likedPlaylistIDs:   lp,
+		api:                client,
+		token:              token,
+		daemon:             dc,
+		volume:             65,
+		greeting:           greeting,
+		seekStepSeconds:    10,
+		keymap:             NormalizeKeymap(keymap),
+		trackDetailFetched: make(map[int]bool),
+		status:             "",
+		styles:             styles,
 	}
 }
 
-func (m Model) Init() tea.Cmd { return nil }
-
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-
-	case tea.WindowSizeMsg:
-		m.w, m.h = msg.Width, msg.Height
-
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-
-		case "tab":
-			m.focus = (m.focus + 1) % 3
-		case "h":
-			if m.focus > 0 {
-				m.focus--
-			}
-		case "l":
-			if m.focus < 2 {
-				m.focus++
-			}
-
-		case "j", "down":
-			switch m.focus {
-			case FocusNav:
-				if m.navIdx < len(m.navItems)-1 {
-					m.navIdx++
-				}
-			case FocusList:
-				if m.trackIdx < len(m.tracks)-1 {
-					m.trackIdx++
-				}
-			}
-		case "k", "up":
-			switch m.focus {
-			case FocusNav:
-				if m.navIdx > 0 {
-					m.navIdx--
-				}
-			case FocusList:
-				if m.trackIdx > 0 {
-					m.trackIdx--
-				}
-			}
-		}
-	}
-	return m, nil
-}
-
-func (m Model) View() string {
-	s := m.styles
-	if m.w == 0 || m.h == 0 {
-		return "loading..."
-	}
-
-	// Render fixed areas first and measure actual heights (borders included)
-	header := renderHeader(s, m.w)
-	player := renderPlayerBar(s, m, m.w)
-	cmd := component.Command(s)
-
-	headerH := lipgloss.Height(header)
-	playerH := lipgloss.Height(player)
-	cmdH := lipgloss.Height(cmd)
-
-	bodyH := m.h - headerH - playerH - cmdH
-	if bodyH < 6 {
-		bodyH = 6
-	}
-
-	// Horizontal sizing
-	navW := math.Clamp(int(float64(m.w)*0.22), 18, 28)
-	inspectW := math.Clamp(int(float64(m.w)*0.30), 24, 40)
-	listW := m.w - navW - inspectW - 4 // gaps
-
-	// Responsive collapse: hide inspect first, then nav
-	if listW < 30 {
-		inspectW = 0
-		listW = m.w - navW - 2
-		if listW < 20 {
-			navW = 0
-			listW = m.w
-		}
-	}
-
-	// Pane contents (inner sizes: -2 for borders)
-	navContent := component.Nav(s, m.navItems, m.navIdx, m.focus == FocusNav, navW-2, bodyH-2)
-	var listContent string
-	switch m.navIdx {
-	case 0:
-		listContent = "Comming soon"
-	case 1:
-		listContent = component.PlaylistTable(s, m.playlists, m.playlistIdx, m.focus == FocusList, listW-2, bodyH-2)
-	case 2:
-		listContent = component.PlaylistTable(s, m.playlists, m.playlistIdx, m.focus == FocusList, listW-2, bodyH-2)
-	case 3:
-		listContent = component.TrackTable(s, m.tracks, m.trackIdx, m.focus == FocusList, listW-2, bodyH-2)
-	default:
-		listContent = "Error"
-	}
-
-	// TOOD Inspect conent
-	//inspectContent := renderInspect(s, m, inspectW-2, bodyH-2)
-
-	navPane := ""
-	if navW > 0 {
-		navPane = component.BorderedBox(
-			s.BorderFor(m.focus == FocusNav),
-			s.LabelFor(m.focus == FocusNav),
-			"1 NAV",
-			navContent,
-			navW,
-			bodyH,
-		)
-	}
-
-	listPane := component.BorderedBox(
-		s.BorderFor(m.focus == FocusList),
-		s.LabelFor(m.focus == FocusList),
-		"2 LIST",
-		listContent,
-		listW,
-		bodyH,
-	)
-	/*
-		inspectPane := ""
-		if inspectW > 0 {
-			inspectPane = renderPaneWithBorderLabel(
-				s.borderFor(m.focus == FocusInspect),
-				s.labelFor(m.focus == FocusInspect),
-				"3 INSPECT",
-				inspectContent,
-				inspectW,
-				bodyH,
-			)
-		}
-	*/
-	body := joinPanes(navPane, listPane, "inspect")
-
-	return s.App.Render(
-		lipgloss.JoinVertical(lipgloss.Left, header, body, player, cmd),
-	)
-}
+func (m Model) Init() tea.Cmd { return m.daemonStatusCmd() }
