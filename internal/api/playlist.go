@@ -6,6 +6,8 @@ type Playlist struct {
 	/// Playlist description
 	Description string `json:"description"`
 	/// Playlist identifier
+	ID int `json:"id"`
+	/// Playlist identifier
 	URN string `json:"urn"`
 	/// Duration
 	Duration int64 `json:"duration"`
@@ -15,6 +17,8 @@ type Playlist struct {
 	TrackCount int64 `json:"track_count"`
 	/// User / Creator of playlist
 	User User `json:"user"`
+	/// User / Creator identifier
+	UserID int `json:"user_id"`
 }
 
 type Playlists struct {
