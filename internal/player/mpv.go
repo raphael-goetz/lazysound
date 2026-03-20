@@ -1,0 +1,311 @@
+package player
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"time"
+)
+
+type MPV struct {
+	mu      sync.Mutex
+	cmd     *exec.Cmd
+	ipcPath string
+	volume  int
+	playing bool
+	lastURL string
+	binPath string
+	stopReq bool
+}
+
+func NewMPV() (*MPV, error) {
+	bin, err := exec.LookPath("mpv")
+	if err != nil {
+		return nil, errors.New("mpv not found in PATH")
+	}
+	return &MPV{binPath: bin, volume: 65}, nil
+}
+
+func (p *MPV) IsPlaying() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.playing
+}
+
+func (p *MPV) Volume() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.volume
+}
+
+func (p *MPV) Play(url string, volume int, token string) error {
+	// We drive playback via an external mpv process and control it through IPC.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if url == "" {
+		return errors.New("empty stream url")
+	}
+	if p.cmd != nil && p.playing {
+		_ = p.stopAndWaitLocked(2 * time.Second)
+	}
+	p.lastURL = url
+	p.volume = volume
+	p.stopReq = false
+	p.ipcPath = ipcPath()
+
+	args := []string{
+		"--no-video",
+		"--quiet",
+		"--no-terminal",
+		fmt.Sprintf("--volume=%d", p.volume),
+		fmt.Sprintf("--input-ipc-server=%s", p.ipcPath),
+	}
+	if token != "" {
+		args = append(args, fmt.Sprintf("--http-header-fields=Authorization: OAuth %s", token))
+	}
+	args = append(args, url)
+	cmd := exec.Command(p.binPath, args...)
+	p.attachLogs(cmd)
+	p.log("mpv start: " + url)
+	if err := cmd.Start(); err != nil {
+		p.log("mpv start error: " + err.Error())
+		return err
+	}
+	p.cmd = cmd
+	p.playing = true
+
+	if err := waitForIPC(p.ipcPath, 8*time.Second); err != nil {
+		p.log("ipc socket not ready: " + err.Error())
+	}
+	return nil
+}
+
+func (p *MPV) Stop() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.log("mpv stop requested")
+	p.stopReq = true
+	return p.stopAndWaitLocked(2 * time.Second)
+}
+
+func (p *MPV) Restart() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.playing {
+		return errors.New("not playing")
+	}
+	p.log("mpv restart requested")
+	return p.sendLocked(map[string]any{"command": []any{"seek", 0, "absolute"}})
+}
+
+func (p *MPV) TimePos() (time.Duration, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.playing {
+		return 0, errors.New("not playing")
+	}
+	v, err := p.getPropertyLocked("time-pos")
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(v * float64(time.Second)), nil
+}
+
+func (p *MPV) Duration() (time.Duration, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.playing {
+		return 0, errors.New("not playing")
+	}
+	v, err := p.getPropertyLocked("duration")
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(v * float64(time.Second)), nil
+}
+
+func (p *MPV) SetVolume(vol int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if vol < 0 {
+		vol = 0
+	}
+	if vol > 100 {
+		vol = 100
+	}
+	p.volume = vol
+	if !p.playing {
+		return nil
+	}
+	p.log(fmt.Sprintf("mpv set volume: %d", vol))
+	return p.sendLocked(map[string]any{"command": []any{"set_property", "volume", vol}})
+}
+
+func (p *MPV) TogglePause() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.playing {
+		return errors.New("not playing")
+	}
+	return p.sendLocked(map[string]any{"command": []any{"cycle", "pause"}})
+}
+
+func (p *MPV) SeekSeconds(delta int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.playing {
+		return errors.New("not playing")
+	}
+	return p.sendLocked(map[string]any{"command": []any{"seek", delta, "relative"}})
+}
+
+func (p *MPV) stopLocked() error {
+	if p.cmd == nil {
+		p.playing = false
+		return nil
+	}
+	_ = p.sendLocked(map[string]any{"command": []any{"quit"}})
+	if p.cmd.Process != nil {
+		if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
+			p.log("mpv interrupt error: " + err.Error())
+		}
+		_ = p.cmd.Process.Kill()
+	}
+	p.cmd = nil
+	p.playing = false
+	return nil
+}
+
+func (p *MPV) stopAndWaitLocked(timeout time.Duration) error {
+	if p.cmd == nil {
+		p.playing = false
+		return nil
+	}
+	_ = p.sendLocked(map[string]any{"command": []any{"quit"}})
+	if p.cmd.Process != nil {
+		if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
+			p.log("mpv interrupt error: " + err.Error())
+		}
+	}
+	done := make(chan error, 1)
+	cmd := p.cmd
+	go func() {
+		done <- cmd.Wait()
+	}()
+	select {
+	case <-time.After(timeout):
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	case <-done:
+	}
+	p.cmd = nil
+	p.playing = false
+	return nil
+}
+
+func (p *MPV) sendLocked(msg any) error {
+	if p.ipcPath == "" {
+		return errors.New("ipc not ready")
+	}
+	conn, err := dialIPC(p.ipcPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return json.NewEncoder(conn).Encode(msg)
+}
+
+type ipcResponse struct {
+	Error string          `json:"error"`
+	Data  json.RawMessage `json:"data"`
+}
+
+func (p *MPV) getPropertyLocked(prop string) (float64, error) {
+	if p.ipcPath == "" {
+		return 0, errors.New("ipc not ready")
+	}
+	conn, err := dialIPC(p.ipcPath)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	req := map[string]any{"command": []any{"get_property", prop}}
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return 0, err
+	}
+	var resp ipcResponse
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return 0, err
+	}
+	if resp.Error != "" && resp.Error != "success" {
+		return 0, errors.New(resp.Error)
+	}
+	if len(resp.Data) == 0 || string(resp.Data) == "null" {
+		return 0, errors.New("no data")
+	}
+	var out float64
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		return 0, err
+	}
+	return out, nil
+}
+
+func ipcPath() string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf(`\\.\pipe\lazysound-mpv-%d`, time.Now().UnixNano())
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("lazysound-mpv-%d.sock", time.Now().UnixNano()))
+}
+
+type Exit struct {
+	Err     error
+	Stopped bool
+}
+
+func (p *MPV) WaitExit() <-chan Exit {
+	ch := make(chan Exit, 1)
+	p.mu.Lock()
+	cmd := p.cmd
+	p.mu.Unlock()
+	if cmd == nil {
+		ch <- Exit{Err: nil, Stopped: false}
+		return ch
+	}
+	go func() {
+		err := cmd.Wait()
+		p.mu.Lock()
+		stopped := p.stopReq
+		p.stopReq = false
+		p.cmd = nil
+		p.playing = false
+		p.mu.Unlock()
+		ch <- Exit{Err: err, Stopped: stopped}
+	}()
+	return ch
+}
+
+func (p *MPV) attachLogs(cmd *exec.Cmd) {
+	f, err := os.OpenFile(filepath.Join(os.TempDir(), "lazysound-mpv.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	cmd.Stdout = f
+	cmd.Stderr = f
+}
+
+func (p *MPV) log(msg string) {
+	f, err := os.OpenFile(filepath.Join(os.TempDir(), "lazysound-mpv.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "[%s] %s\n", time.Now().Format(time.RFC3339), msg)
+}
