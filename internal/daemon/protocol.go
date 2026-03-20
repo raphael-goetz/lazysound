@@ -1,0 +1,33 @@
+package daemon
+
+import "github.com/raphael-goetz/lazysound/internal/api"
+
+type Request struct {
+	Cmd      string      `json:"cmd"`
+	Token    string      `json:"token,omitempty"`
+	Track    *api.Track  `json:"track,omitempty"`
+	Queue    []api.Track `json:"queue,omitempty"`
+	StartIdx int         `json:"start_idx,omitempty"`
+	Volume   int         `json:"volume,omitempty"`
+	SeekSec  int         `json:"seek_sec,omitempty"`
+	Shuffle  *bool       `json:"shuffle,omitempty"`
+	Repeat   *bool       `json:"repeat,omitempty"`
+}
+
+type Response struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+	State *State `json:"state,omitempty"`
+}
+
+type State struct {
+	Playing    bool       `json:"playing"`
+	Paused     bool       `json:"paused"`
+	Track      *api.Track `json:"track,omitempty"`
+	Index      int        `json:"index"`
+	Volume     int        `json:"volume"`
+	Shuffle    bool       `json:"shuffle"`
+	Repeat     bool       `json:"repeat"`
+	ElapsedMs  int64      `json:"elapsed_ms,omitempty"`
+	DurationMs int64      `json:"duration_ms,omitempty"`
+}
