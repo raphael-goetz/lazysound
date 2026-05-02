@@ -85,17 +85,10 @@ go install ./cmd/lazysoundctl
 Ensure `~/go/bin` is in your `PATH`.
 
 ## Workspace
-This repository now uses `go.work` with multiple modules:
 - root app module
 - `lib/soundcloud`
 - `lib/player`
 - `lib/uikit`
-
-Useful commands:
-```
-go work sync
-go build ./...
-```
 
 ## Architecture
 ```
@@ -124,7 +117,7 @@ go build ./...
 │  - search state                                                       │
 │  - quick actions state                                                │
 │  - playback state                                                     │
-│  - renders panes + info                                                │
+│  - renders panes + info                                               │
 └───────────────────────────────────────────────────────────────────────┘
         │                         │                          │
         ▼                         ▼                          ▼
