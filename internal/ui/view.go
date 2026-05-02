@@ -14,7 +14,7 @@ func (m Model) View() string {
 
 	header := renderHeader(s, m, m.w)
 	player := renderPlayerBar(s, m, m.w)
-	cmd := component.Command(s, m.navIdx == 0)
+	cmd := component.Command(s, m.navIdx == 0, m.searchActive)
 
 	headerH := lipgloss.Height(header)
 	playerH := lipgloss.Height(player)
@@ -44,7 +44,7 @@ func (m Model) View() string {
 		if m.navIdx == 0 {
 			listContent = m.renderSearchList(s, listW-2, bodyH-2)
 		} else if m.listKind() == ListTracks {
-			listContent = component.TrackTable(s, m.currentTracks(), m.trackIdx, m.focus == FocusList, listW-2, bodyH-2)
+			listContent = component.TrackTable(s, m.currentTracks(), m.trackBadges, m.trackIdx, m.focus == FocusList, listW-2, bodyH-2)
 		} else if m.listKind() == ListPlaylists {
 			listContent = component.PlaylistTable(s, m.currentPlaylists(), m.playlistIdx, m.focus == FocusList, listW-2, bodyH-2)
 		} else {

@@ -80,18 +80,29 @@ func FetchInitialData(ctx context.Context, client *api.ApiClient, token string) 
 	}()
 	wg.Wait()
 
-	if mtErr != nil || plErr != nil || trErr != nil {
-		return Bootstrap{}, wrap(KindFetch, "required", joinErrors(mtErr, plErr, trErr))
-	}
-
 	out := Bootstrap{
 		Me:             me,
 		Token:          token,
 		Client:         client,
-		MyTracks:       mt.Collection,
-		LikedTracks:    tr.Collection,
-		MyPlaylists:    pl.Collection,
+		MyTracks:       []api.Track{},
+		LikedTracks:    []api.Track{},
+		MyPlaylists:    []api.Playlist{},
 		LikedPlaylists: nil,
+	}
+	if mtErr != nil {
+		out.Warnings = append(out.Warnings, wrap(KindFetch, "my tracks", mtErr))
+	} else if mt != nil {
+		out.MyTracks = mt.Collection
+	}
+	if trErr != nil {
+		out.Warnings = append(out.Warnings, wrap(KindFetch, "liked tracks", trErr))
+	} else if tr != nil {
+		out.LikedTracks = tr.Collection
+	}
+	if plErr != nil {
+		out.Warnings = append(out.Warnings, wrap(KindFetch, "my playlists", plErr))
+	} else if pl != nil {
+		out.MyPlaylists = pl.Collection
 	}
 	if lpErr != nil {
 		out.Warnings = append(out.Warnings, wrap(KindFetch, "liked playlists", lpErr))

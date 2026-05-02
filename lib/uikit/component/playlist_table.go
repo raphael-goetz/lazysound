@@ -1,7 +1,6 @@
 package component
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -18,14 +17,13 @@ func PlaylistTable(s style.Styles, playlists []api.Playlist, sel int, focused bo
 	wDuration := int(fwidth * (1.0 / 8.0))
 	wCount := int(fwidth * (1.0 / 8.0))
 
-	format := fmt.Sprintf("%%-%ds  %%-%ds  %%-%ds  %%-%ds ",
-		wTitle,
-		wArtist,
-		wDuration,
-		wCount,
-	)
-
-	header := s.Muted.Render(fitWidth(fmt.Sprintf(format, "Title", "Creator", "Duration", "Tracks"), width))
+	headerRow := strings.Join([]string{
+		cellDisplay("Title", wTitle),
+		cellDisplay("Creator", wArtist),
+		cellDisplay("Duration", wDuration),
+		cellDisplay("Tracks", wCount),
+	}, "  ")
+	header := s.Muted.Render(fitWidth(headerRow, width))
 	sep := s.Muted.Render(fitWidth(strings.Repeat("─", width), width))
 
 	length := len(playlists)
@@ -37,12 +35,12 @@ func PlaylistTable(s style.Styles, playlists []api.Playlist, sel int, focused bo
 	lines := []string{header, sep}
 	for i := start; i < end; i++ {
 		t := playlists[i]
-		row := fmt.Sprintf(format,
-			math.Truncate(t.Title, wTitle),
-			math.Truncate(t.User.Username, wArtist),
-			math.Truncate(Time(t.Duration), wDuration),
-			math.Truncate(strconv.Itoa(int(t.TrackCount)), wCount),
-		)
+		row := strings.Join([]string{
+			cellDisplay(t.Title, wTitle),
+			cellDisplay(t.User.Username, wArtist),
+			cellDisplay(Time(t.Duration), wDuration),
+			cellDisplay(strconv.Itoa(int(t.TrackCount)), wCount),
+		}, "  ")
 
 		if i == sel {
 			if focused {

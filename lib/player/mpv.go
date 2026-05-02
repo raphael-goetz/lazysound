@@ -1,26 +1,31 @@
 package player
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
 type MPV struct {
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	ipcPath string
-	volume  int
-	playing bool
-	lastURL string
-	binPath string
-	stopReq bool
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	cmdID     uint64
+	stopReqID uint64
+	procLog   *tailWriter
+	ipcPath   string
+	volume    int
+	playing   bool
+	lastURL   string
+	binPath   string
 }
 
 func NewMPV() (*MPV, error) {
@@ -51,17 +56,18 @@ func (p *MPV) Play(url string, volume int, token string) error {
 		return errors.New("empty stream url")
 	}
 	if p.cmd != nil && p.playing {
+		// Replacement playback should not be treated as "natural end".
+		p.stopReqID = p.cmdID
 		_ = p.stopAndWaitLocked(2 * time.Second)
 	}
 	p.lastURL = url
 	p.volume = volume
-	p.stopReq = false
 	p.ipcPath = ipcPath()
 
 	args := []string{
 		"--no-video",
-		"--quiet",
-		"--no-terminal",
+		"--no-ytdl",
+		"--msg-level=all=warn",
 		fmt.Sprintf("--volume=%d", p.volume),
 		fmt.Sprintf("--input-ipc-server=%s", p.ipcPath),
 	}
@@ -76,6 +82,7 @@ func (p *MPV) Play(url string, volume int, token string) error {
 		p.log("mpv start error: " + err.Error())
 		return err
 	}
+	p.cmdID++
 	p.cmd = cmd
 	p.playing = true
 
@@ -89,7 +96,7 @@ func (p *MPV) Stop() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.log("mpv stop requested")
-	p.stopReq = true
+	p.stopReqID = p.cmdID
 	return p.stopAndWaitLocked(2 * time.Second)
 }
 
@@ -186,14 +193,15 @@ func (p *MPV) stopAndWaitLocked(timeout time.Duration) error {
 		p.playing = false
 		return nil
 	}
+	cmd := p.cmd
+	cmdID := p.cmdID
 	_ = p.sendLocked(map[string]any{"command": []any{"quit"}})
-	if p.cmd.Process != nil {
-		if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
+	if cmd.Process != nil {
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
 			p.log("mpv interrupt error: " + err.Error())
 		}
 	}
 	done := make(chan error, 1)
-	cmd := p.cmd
 	go func() {
 		done <- cmd.Wait()
 	}()
@@ -205,8 +213,13 @@ func (p *MPV) stopAndWaitLocked(timeout time.Duration) error {
 		_ = cmd.Wait()
 	case <-done:
 	}
-	p.cmd = nil
-	p.playing = false
+	if p.cmd == cmd {
+		p.cmd = nil
+		p.playing = false
+	}
+	if p.stopReqID == cmdID {
+		p.stopReqID = 0
+	}
 	return nil
 }
 
@@ -268,12 +281,14 @@ func ipcPath() string {
 type Exit struct {
 	Err     error
 	Stopped bool
+	Detail  string
 }
 
 func (p *MPV) WaitExit() <-chan Exit {
 	ch := make(chan Exit, 1)
 	p.mu.Lock()
 	cmd := p.cmd
+	cmdID := p.cmdID
 	p.mu.Unlock()
 	if cmd == nil {
 		ch <- Exit{Err: nil, Stopped: false}
@@ -282,23 +297,37 @@ func (p *MPV) WaitExit() <-chan Exit {
 	go func() {
 		err := cmd.Wait()
 		p.mu.Lock()
-		stopped := p.stopReq
-		p.stopReq = false
-		p.cmd = nil
-		p.playing = false
+		detail := ""
+		if p.procLog != nil {
+			detail = p.procLog.Summary()
+		}
+		stopped := p.stopReqID == cmdID
+		if p.stopReqID == cmdID {
+			p.stopReqID = 0
+		}
+		if p.cmd == cmd {
+			p.cmd = nil
+			p.playing = false
+			p.procLog = nil
+		}
 		p.mu.Unlock()
-		ch <- Exit{Err: err, Stopped: stopped}
+		ch <- Exit{Err: err, Stopped: stopped, Detail: detail}
 	}()
 	return ch
 }
 
 func (p *MPV) attachLogs(cmd *exec.Cmd) {
+	tw := newTailWriter(80)
+	p.procLog = tw
 	f, err := os.OpenFile(filepath.Join(os.TempDir(), "lazysound-mpv.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
+		cmd.Stdout = tw
+		cmd.Stderr = tw
 		return
 	}
-	cmd.Stdout = f
-	cmd.Stderr = f
+	mw := io.MultiWriter(f, tw)
+	cmd.Stdout = mw
+	cmd.Stderr = mw
 }
 
 func (p *MPV) log(msg string) {
@@ -308,4 +337,77 @@ func (p *MPV) log(msg string) {
 	}
 	defer f.Close()
 	_, _ = fmt.Fprintf(f, "[%s] %s\n", time.Now().Format(time.RFC3339), msg)
+}
+
+type tailWriter struct {
+	mu      sync.Mutex
+	lines   []string
+	partial string
+	max     int
+}
+
+func newTailWriter(max int) *tailWriter {
+	return &tailWriter{max: max}
+}
+
+func (t *tailWriter) Write(b []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	data := t.partial + string(b)
+	parts := strings.Split(data, "\n")
+	if len(parts) == 0 {
+		return len(b), nil
+	}
+	for i := 0; i < len(parts)-1; i++ {
+		line := strings.TrimSpace(parts[i])
+		if line != "" {
+			t.lines = append(t.lines, line)
+		}
+	}
+	t.partial = parts[len(parts)-1]
+	if len(t.lines) > t.max {
+		t.lines = t.lines[len(t.lines)-t.max:]
+	}
+	return len(b), nil
+}
+
+func (t *tailWriter) Summary() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.lines) == 0 {
+		return ""
+	}
+	keys := []string{
+		"HTTP Error",
+		"Unauthorized",
+		"Forbidden",
+		"Failed to open",
+		"Opening failed",
+		"Errors when loading file",
+	}
+	var picked []string
+	for _, ln := range t.lines {
+		for _, k := range keys {
+			if strings.Contains(ln, k) {
+				picked = append(picked, ln)
+				break
+			}
+		}
+	}
+	use := picked
+	if len(use) == 0 {
+		if len(t.lines) > 8 {
+			use = t.lines[len(t.lines)-8:]
+		} else {
+			use = t.lines
+		}
+	}
+	out := strings.Join(use, " | ")
+	if len(out) > 1200 {
+		var b bytes.Buffer
+		b.WriteString(out[:1200])
+		b.WriteString("...")
+		return b.String()
+	}
+	return out
 }

@@ -39,7 +39,7 @@ func DefaultKeymap() Keymap {
 		ActionMenu:   []string{"a"},
 		Search:       []string{"/"},
 		SearchTracks: []string{"t"},
-		SearchPlay:   []string{"p"},
+		SearchPlay:   []string{"P"},
 		Play:         []string{"p"},
 		Stop:         []string{"s"},
 		Restart:      []string{"r"},
@@ -54,7 +54,9 @@ func DefaultKeymap() Keymap {
 }
 
 func NormalizeKeymap(k Keymap) Keymap {
-	return mergeKeymap(DefaultKeymap(), k)
+	out := mergeKeymap(DefaultKeymap(), k)
+	sanitizeKeymapConflicts(&out)
+	return out
 }
 
 func mergeKeymap(def, custom Keymap) Keymap {
@@ -134,4 +136,33 @@ func keyIs(key string, list []string) bool {
 		}
 	}
 	return false
+}
+
+func sanitizeKeymapConflicts(k *Keymap) {
+	if k == nil {
+		return
+	}
+	// Keep playback key distinct from search mode toggle.
+	k.SearchPlay = removeKeys(k.SearchPlay, k.Play)
+	if len(k.SearchPlay) == 0 {
+		k.SearchPlay = []string{"P"}
+	}
+}
+
+func removeKeys(keys []string, banned []string) []string {
+	if len(keys) == 0 {
+		return keys
+	}
+	ban := make(map[string]struct{}, len(banned))
+	for _, b := range banned {
+		ban[b] = struct{}{}
+	}
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if _, exists := ban[k]; exists {
+			continue
+		}
+		out = append(out, k)
+	}
+	return out
 }

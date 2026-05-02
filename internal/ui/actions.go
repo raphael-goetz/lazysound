@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 	"github.com/raphael-goetz/lazysound/lib/uikit/component"
 	"github.com/raphael-goetz/lazysound/lib/uikit/math"
 	"github.com/raphael-goetz/lazysound/lib/uikit/style"
@@ -193,7 +194,7 @@ func (m Model) actionCmdCreatePlaylist(title string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		pl, err := m.api.CreatePlaylist(ctx, m.token, title, "", "private", nil)
-		return actionResultMsg{kind: ActionCreatePlaylist, errAction: err, playlist: pl}
+		return m.refreshMyPlaylistsMsg(ctx, err, ActionCreatePlaylist, pl, 0)
 	}
 }
 
@@ -202,14 +203,18 @@ func (m Model) actionCmdRenamePlaylist(title string) tea.Cmd {
 	if p == nil {
 		return nil
 	}
+	ref := playlistRef(*p)
+	if ref == "" {
+		return nil
+	}
 	return func() tea.Msg {
 		if m.api == nil {
 			return actionResultMsg{kind: ActionRenamePlaylist, errAction: errNoSearchClient{}}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		pl, err := m.api.UpdatePlaylist(ctx, m.token, p.ID, title, p.Description, nil)
-		return actionResultMsg{kind: ActionRenamePlaylist, errAction: err, playlist: pl}
+		pl, err := m.api.UpdatePlaylistByRef(ctx, m.token, ref, title, "", nil)
+		return m.refreshMyPlaylistsMsg(ctx, err, ActionRenamePlaylist, pl, 0)
 	}
 }
 
@@ -225,7 +230,7 @@ func (m Model) actionCmdDeletePlaylist() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		err := m.api.DeletePlaylist(ctx, m.token, p.ID)
-		return actionResultMsg{kind: ActionDeletePlaylist, errAction: err, playlistID: p.ID}
+		return m.refreshMyPlaylistsMsg(ctx, err, ActionDeletePlaylist, nil, p.ID)
 	}
 }
 
@@ -298,9 +303,14 @@ func (m Model) actionCmdAddToPlaylist(idx int) tea.Cmd {
 		if containsInt(trackIDs, t.ID) {
 			return actionResultMsg{kind: ActionAddToPlaylist, errAction: fmt.Errorf("track already in playlist")}
 		}
-		trackIDs = append(trackIDs, t.ID)
-		pl, err := m.api.UpdatePlaylist(ctx, m.token, p.ID, p.Title, p.Description, trackIDs)
-		return actionResultMsg{kind: ActionAddToPlaylist, errAction: err, playlist: pl}
+		tracks := append([]api.Track{}, p.Tracks...)
+		tracks = append(tracks, *t)
+		ref := playlistRef(p)
+		if ref == "" {
+			return actionResultMsg{kind: ActionAddToPlaylist, errAction: fmt.Errorf("playlist ref missing")}
+		}
+		pl, err := m.api.UpdatePlaylistByRef(ctx, m.token, ref, "", "", tracks)
+		return m.refreshMyPlaylistsMsg(ctx, err, ActionAddToPlaylist, pl, 0)
 	}
 }
 
@@ -319,10 +329,18 @@ func (m Model) actionCmdRemoveFromPlaylist() tea.Cmd {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		trackIDs := playlistTrackIDs(p.Tracks)
-		trackIDs = removeInt(trackIDs, t.ID)
-		pl, err := m.api.UpdatePlaylist(ctx, m.token, p.ID, p.Title, p.Description, trackIDs)
-		return actionResultMsg{kind: ActionRemoveFromPlaylist, errAction: err, playlist: pl}
+		ref := playlistRef(*p)
+		if ref == "" {
+			return actionResultMsg{kind: ActionRemoveFromPlaylist, errAction: fmt.Errorf("playlist ref missing")}
+		}
+		tracks := make([]api.Track, 0, len(p.Tracks))
+		for _, tr := range p.Tracks {
+			if tr.ID != t.ID {
+				tracks = append(tracks, tr)
+			}
+		}
+		pl, err := m.api.UpdatePlaylistByRef(ctx, m.token, ref, "", "", tracks)
+		return m.refreshMyPlaylistsMsg(ctx, err, ActionRemoveFromPlaylist, pl, 0)
 	}
 }
 
@@ -355,5 +373,25 @@ func (m Model) refreshLikedPlaylistsMsg(ctx context.Context, err error, kind Act
 		return msg
 	}
 	msg.likedPlaylists = pl.Collection
+	return msg
+}
+
+func (m Model) refreshMyPlaylistsMsg(ctx context.Context, err error, kind ActionKind, playlist *api.Playlist, playlistID int) actionResultMsg {
+	msg := actionResultMsg{
+		kind:               kind,
+		errAction:          err,
+		playlist:           playlist,
+		playlistID:         playlistID,
+		refreshMyPlaylists: true,
+	}
+	if err != nil {
+		return msg
+	}
+	pl, err2 := m.api.MyPlaylists(ctx, m.token)
+	if err2 != nil {
+		msg.errRefresh = err2
+		return msg
+	}
+	msg.myPlaylists = pl.Collection
 	return msg
 }

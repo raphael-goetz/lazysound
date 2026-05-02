@@ -6,16 +6,18 @@ import (
 )
 
 type actionResultMsg struct {
-	kind             ActionKind
-	errAction        error
-	errRefresh       error
-	playlist         *api.Playlist
-	trackID          int
-	playlistID       int
-	likedTracks      []api.Track
-	likedPlaylists   []api.Playlist
-	refreshTracks    bool
-	refreshPlaylists bool
+	kind               ActionKind
+	errAction          error
+	errRefresh         error
+	playlist           *api.Playlist
+	trackID            int
+	playlistID         int
+	myPlaylists        []api.Playlist
+	refreshMyPlaylists bool
+	likedTracks        []api.Track
+	likedPlaylists     []api.Playlist
+	refreshTracks      bool
+	refreshPlaylists   bool
 }
 
 type searchResultMsg struct {
@@ -31,6 +33,7 @@ type daemonResultMsg struct {
 	err     error
 	state   *daemon.State
 	session int
+	trackID int
 }
 
 type daemonStatusMsg struct {
@@ -39,6 +42,12 @@ type daemonStatusMsg struct {
 }
 
 type playTickMsg struct{}
+
+type trackProbeMsg struct {
+	trackID int
+	badge   string
+	err     error
+}
 
 type trackDetailMsg struct {
 	track api.Track

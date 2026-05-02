@@ -33,7 +33,7 @@ func (m Model) renderSearchList(s style.Styles, width, height int) string {
 
 	switch m.searchMode {
 	case SearchTracks:
-		lines = append(lines, component.TrackTable(s, m.searchTracks, m.trackIdx, m.focus == FocusList, width, bodyH))
+		lines = append(lines, component.TrackTable(s, m.searchTracks, m.trackBadges, m.trackIdx, m.focus == FocusList, width, bodyH))
 	case SearchPlaylists:
 		lines = append(lines, component.PlaylistTable(s, m.searchPlaylists, m.playlistIdx, m.focus == FocusList, width, bodyH))
 	}

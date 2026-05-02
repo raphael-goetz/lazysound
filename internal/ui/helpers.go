@@ -2,9 +2,21 @@ package ui
 
 import (
 	"math/rand"
+	"strconv"
+	"strings"
 
 	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 )
+
+func playlistRef(p api.Playlist) string {
+	if strings.TrimSpace(p.URN) != "" {
+		return p.URN
+	}
+	if p.ID > 0 {
+		return "soundcloud:playlists:" + strconv.Itoa(p.ID)
+	}
+	return ""
+}
 
 func playlistTrackIDs(tracks []api.Track) []int {
 	ids := make([]int, 0, len(tracks))

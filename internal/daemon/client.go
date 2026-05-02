@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 	"time"
 
 	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
@@ -18,6 +19,11 @@ const DefaultAddr = "127.0.0.1:7777"
 
 type Client struct {
 	addr string
+
+	statusMu   sync.Mutex
+	statusConn net.Conn
+	statusEnc  *json.Encoder
+	statusDec  *json.Decoder
 }
 
 func NewClient(addr string) *Client {
@@ -46,7 +52,14 @@ func (c *Client) EnsureRunning(ctx context.Context) error {
 }
 
 func (c *Client) Status(ctx context.Context) (*State, error) {
-	resp, err := c.call(ctx, Request{Cmd: "status"})
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+
+	resp, err := c.statusCallLocked(ctx)
+	if err != nil {
+		c.resetStatusConnLocked()
+		resp, err = c.statusCallLocked(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -54,6 +67,49 @@ func (c *Client) Status(ctx context.Context) (*State, error) {
 		return nil, errors.New(resp.Error)
 	}
 	return resp.State, nil
+}
+
+func (c *Client) statusCallLocked(ctx context.Context) (Response, error) {
+	if err := c.ensureStatusConnLocked(ctx); err != nil {
+		return Response{}, err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = c.statusConn.SetDeadline(deadline)
+	} else {
+		_ = c.statusConn.SetDeadline(time.Now().Add(3 * time.Second))
+	}
+	if err := c.statusEnc.Encode(Request{Cmd: "status"}); err != nil {
+		return Response{}, err
+	}
+	var resp Response
+	if err := c.statusDec.Decode(&resp); err != nil {
+		return Response{}, err
+	}
+	return resp, nil
+}
+
+func (c *Client) ensureStatusConnLocked(ctx context.Context) error {
+	if c.statusConn != nil {
+		return nil
+	}
+	dialer := net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
+	if err != nil {
+		return err
+	}
+	c.statusConn = conn
+	c.statusEnc = json.NewEncoder(conn)
+	c.statusDec = json.NewDecoder(conn)
+	return nil
+}
+
+func (c *Client) resetStatusConnLocked() {
+	if c.statusConn != nil {
+		_ = c.statusConn.Close()
+	}
+	c.statusConn = nil
+	c.statusEnc = nil
+	c.statusDec = nil
 }
 
 func (c *Client) PlayTrack(ctx context.Context, token string, t api.Track) (*State, error) {
@@ -76,6 +132,20 @@ func (c *Client) PlayQueue(ctx context.Context, token string, q []api.Track, sta
 		return nil, errors.New(resp.Error)
 	}
 	return resp.State, nil
+}
+
+func (c *Client) ProbeTrack(ctx context.Context, token string, t api.Track) (*Probe, error) {
+	resp, err := c.call(ctx, Request{Cmd: "probe_track", Token: token, Track: &t})
+	if err != nil {
+		return nil, err
+	}
+	if !resp.OK {
+		return nil, errors.New(resp.Error)
+	}
+	if resp.Probe == nil {
+		return nil, errors.New("missing probe result")
+	}
+	return resp.Probe, nil
 }
 
 func (c *Client) Stop(ctx context.Context) (*State, error) {

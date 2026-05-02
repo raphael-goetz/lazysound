@@ -147,6 +147,11 @@ func renderInspectInfo(s style.Styles, m Model, width, height int) string {
 			lines = append(lines, "")
 			lines = append(lines, s.Muted.Render("Details"))
 			lines = append(lines, fmt.Sprintf("Duration: %s", component.Time(t.Duration)))
+			access := strings.TrimSpace(t.Access)
+			if access == "" {
+				access = "-"
+			}
+			lines = append(lines, fmt.Sprintf("Access:   %s", access))
 			if t.Bpm > 0 {
 				lines = append(lines, fmt.Sprintf("BPM:      %d", int(float64(t.Bpm)+0.5)))
 			} else {

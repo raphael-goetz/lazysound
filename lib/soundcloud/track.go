@@ -21,6 +21,8 @@ type Track struct {
 	Bpm BPM `json:"bpm"`
 	// Duration
 	Duration int64 `json:"duration"`
+	// Stream access level (e.g. playable, preview, blocked)
+	Access string `json:"access"`
 	/// User / Uploader of track
 	User User `json:"user"`
 }

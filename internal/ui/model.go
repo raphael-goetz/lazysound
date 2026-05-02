@@ -124,6 +124,8 @@ type Model struct {
 	playlistPlayTracks []api.Track
 	playlistPlayIdx    int
 	trackDetailFetched map[int]bool
+	trackBadges        map[int]string
+	probeInFlight      map[int]bool
 
 	styles style.Styles
 
@@ -204,6 +206,8 @@ func NewModel(myTracks []api.Track, likedTracks []api.Track, myPlaylists []api.P
 		seekStepSeconds:    10,
 		keymap:             NormalizeKeymap(keymap),
 		trackDetailFetched: make(map[int]bool),
+		trackBadges:        make(map[int]string),
+		probeInFlight:      make(map[int]bool),
 		status:             "",
 		styles:             styles,
 	}

@@ -18,6 +18,13 @@ type Response struct {
 	OK    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
 	State *State `json:"state,omitempty"`
+	Probe *Probe `json:"probe,omitempty"`
+}
+
+type Probe struct {
+	TrackID int    `json:"track_id"`
+	Badge   string `json:"badge"`
+	Detail  string `json:"detail,omitempty"`
 }
 
 type State struct {
@@ -30,4 +37,5 @@ type State struct {
 	Repeat     bool       `json:"repeat"`
 	ElapsedMs  int64      `json:"elapsed_ms,omitempty"`
 	DurationMs int64      `json:"duration_ms,omitempty"`
+	LastError  string     `json:"last_error,omitempty"`
 }

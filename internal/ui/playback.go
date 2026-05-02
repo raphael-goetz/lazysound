@@ -191,30 +191,34 @@ func (m Model) seekCmd(delta int) tea.Cmd {
 func (m Model) playTrackCmd(t api.Track, session int) tea.Cmd {
 	return func() tea.Msg {
 		if m.daemon == nil {
-			return daemonResultMsg{action: "play", err: fmt.Errorf("daemon not available"), session: session}
+			return daemonResultMsg{action: "play", err: fmt.Errorf("daemon not available"), session: session, trackID: t.ID}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := m.daemon.EnsureRunning(ctx); err != nil {
-			return daemonResultMsg{action: "play", err: err, session: session}
+			return daemonResultMsg{action: "play", err: err, session: session, trackID: t.ID}
 		}
 		state, err := m.daemon.PlayTrack(ctx, m.token, t)
-		return daemonResultMsg{action: "play", err: err, state: state, session: session}
+		return daemonResultMsg{action: "play", err: err, state: state, session: session, trackID: t.ID}
 	}
 }
 
 func (m Model) playQueueCmd(tracks []api.Track, start int, session int) tea.Cmd {
+	trackID := 0
+	if start >= 0 && start < len(tracks) {
+		trackID = tracks[start].ID
+	}
 	return func() tea.Msg {
 		if m.daemon == nil {
-			return daemonResultMsg{action: "play", err: fmt.Errorf("daemon not available"), session: session}
+			return daemonResultMsg{action: "play", err: fmt.Errorf("daemon not available"), session: session, trackID: trackID}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := m.daemon.EnsureRunning(ctx); err != nil {
-			return daemonResultMsg{action: "play", err: err, session: session}
+			return daemonResultMsg{action: "play", err: err, session: session, trackID: trackID}
 		}
 		state, err := m.daemon.PlayQueue(ctx, m.token, tracks, start)
-		return daemonResultMsg{action: "play", err: err, state: state, session: session}
+		return daemonResultMsg{action: "play", err: err, state: state, session: session, trackID: trackID}
 	}
 }
 

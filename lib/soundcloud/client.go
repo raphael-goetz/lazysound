@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,12 +49,16 @@ func (c *ApiClient) doJSON(ctx context.Context, method, path, token string, quer
 	if query != nil {
 		u.RawQuery = query.Encode()
 	}
-	var buf io.Reader
+	var (
+		buf          io.Reader
+		reqBodyBytes []byte
+	)
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
+		reqBodyBytes = b
 		buf = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), buf)
@@ -75,6 +80,9 @@ func (c *ApiClient) doJSON(ctx context.Context, method, path, token string, quer
 	defer res.Body.Close()
 	bodyBytes, _ := io.ReadAll(res.Body)
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		if len(reqBodyBytes) > 0 {
+			return fmt.Errorf("%s %s failed: %s: %s; request_body=%s", method, path, res.Status, string(bodyBytes), string(reqBodyBytes))
+		}
 		return fmt.Errorf("%s %s failed: %s: %s", method, path, res.Status, string(bodyBytes))
 	}
 	if out == nil {
@@ -179,7 +187,8 @@ func (c *ApiClient) TrackByID(ctx context.Context, token string, trackID int) (*
 }
 
 type playlistTrackRef struct {
-	ID int `json:"id"`
+	ID  int    `json:"id,omitempty"`
+	URN string `json:"urn,omitempty"`
 }
 
 type createUpdatePlaylistRequest struct {
@@ -199,23 +208,44 @@ func (c *ApiClient) CreatePlaylist(ctx context.Context, token, title, descriptio
 	if len(trackIDs) > 0 {
 		reqBody.Playlist.Tracks = make([]playlistTrackRef, 0, len(trackIDs))
 		for _, id := range trackIDs {
-			reqBody.Playlist.Tracks = append(reqBody.Playlist.Tracks, playlistTrackRef{ID: id})
+			if id > 0 {
+				reqBody.Playlist.Tracks = append(reqBody.Playlist.Tracks, playlistTrackRef{ID: id})
+			}
 		}
 	}
 	return c.createOrUpdatePlaylist(ctx, token, apiBase+"/playlists", http.MethodPost, reqBody)
 }
 
 func (c *ApiClient) UpdatePlaylist(ctx context.Context, token string, playlistID int, title, description string, trackIDs []int) (*Playlist, error) {
+	tracks := make([]Track, 0, len(trackIDs))
+	for _, id := range trackIDs {
+		if id > 0 {
+			tracks = append(tracks, Track{ID: id, URN: "soundcloud:tracks:" + strconv.Itoa(id)})
+		}
+	}
+	return c.UpdatePlaylistByRef(ctx, token, "soundcloud:playlists:"+strconv.Itoa(playlistID), title, description, tracks)
+}
+
+func (c *ApiClient) UpdatePlaylistByRef(ctx context.Context, token, playlistRef, title, description string, tracks []Track) (*Playlist, error) {
 	var reqBody createUpdatePlaylistRequest
 	reqBody.Playlist.Title = title
 	reqBody.Playlist.Description = description
-	if len(trackIDs) > 0 {
-		reqBody.Playlist.Tracks = make([]playlistTrackRef, 0, len(trackIDs))
-		for _, id := range trackIDs {
-			reqBody.Playlist.Tracks = append(reqBody.Playlist.Tracks, playlistTrackRef{ID: id})
+	if len(tracks) > 0 {
+		reqBody.Playlist.Tracks = make([]playlistTrackRef, 0, len(tracks))
+		for _, t := range tracks {
+			ref := playlistTrackRef{}
+			if strings.TrimSpace(t.URN) != "" {
+				ref.URN = t.URN
+			} else if t.ID > 0 {
+				ref.ID = t.ID
+			}
+			if ref.URN == "" && ref.ID == 0 {
+				continue
+			}
+			reqBody.Playlist.Tracks = append(reqBody.Playlist.Tracks, ref)
 		}
 	}
-	return c.createOrUpdatePlaylist(ctx, token, fmt.Sprintf("%s/playlists/%d", apiBase, playlistID), http.MethodPut, reqBody)
+	return c.createOrUpdatePlaylist(ctx, token, fmt.Sprintf("%s/playlists/%s", apiBase, playlistRef), http.MethodPut, reqBody)
 }
 
 func (c *ApiClient) DeletePlaylist(ctx context.Context, token string, playlistID int) error {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/raphael-goetz/lazysound/internal/app"
 	"github.com/raphael-goetz/lazysound/internal/daemon"
@@ -10,7 +12,7 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
+	log := daemonLogger()
 
 	cfg, ok, err := app.LoadConfig()
 	if err != nil {
@@ -39,12 +41,11 @@ func main() {
 	}
 	client := api.NewApiClient(apiCfg, store)
 	addr := cfg.Daemon.Addr
-	srv, err := daemon.NewServer(addr, client)
+	srv, err := daemon.NewServer(addr, client, log)
 	if err != nil {
 		log.Error("daemon init", "err", err)
 		os.Exit(1)
 	}
-	log.Info("lazysoundd listening", "addr", addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Error("daemon error", "err", err)
 		os.Exit(1)
@@ -57,4 +58,14 @@ func mustConfigPath() string {
 		return ""
 	}
 	return path
+}
+
+func daemonLogger() *slog.Logger {
+	logPath := filepath.Join(os.TempDir(), "lazysoundd.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	}
+	w := io.MultiWriter(os.Stderr, f)
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }

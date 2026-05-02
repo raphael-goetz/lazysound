@@ -231,7 +231,7 @@ func listenOnRedirect(cbURL *url.URL) (net.Listener, error) {
 func (c *ApiClient) EnsureValidToken(ctx context.Context) (Token, error) {
 	tok, err := c.store.Load()
 	if err != nil {
-		return Token{}, fmt.Errorf("not authenticated (run: soundcli auth): %w", err)
+		return Token{}, fmt.Errorf("not authenticated (run: lazysoundctl auth): %w", err)
 	}
 
 	// Refresh a minute early to avoid edge cases.
@@ -240,7 +240,7 @@ func (c *ApiClient) EnsureValidToken(ctx context.Context) (Token, error) {
 	}
 
 	if tok.RefreshToken == "" {
-		return Token{}, fmt.Errorf("token expired and no refresh_token available (run: soundcli auth)")
+		return Token{}, fmt.Errorf("token expired and no refresh_token available (run: lazysoundctl auth)")
 	}
 
 	newTok, err := c.refreshToken(ctx, tok.RefreshToken)

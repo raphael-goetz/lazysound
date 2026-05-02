@@ -184,6 +184,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchMode = SearchTracks
 				m.playlistTracks = false
 				m.trackIdx = 0
+				return m, m.probeTracksCmd(m.currentTracks())
 			}
 			return m, nil
 		}
@@ -203,11 +204,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.navIdx = (m.navIdx + 1) % len(m.navItems)
 				}
 				m.clearPlaylistTracksIfNavChanged(prev)
+				return m, m.probeTracksCmd(m.currentTracks())
 			case FocusList:
 				m.moveListDown()
-				if cmd := m.maybeFetchTrackDetailsCmd(); cmd != nil {
-					return m, cmd
-				}
+				return m, tea.Batch(m.maybeFetchTrackDetailsCmd(), m.probeTracksCmd(m.currentTracks()))
 			}
 			return m, nil
 		}
@@ -222,19 +222,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.clearPlaylistTracksIfNavChanged(prev)
+				return m, m.probeTracksCmd(m.currentTracks())
 			case FocusList:
 				m.moveListUp()
-				if cmd := m.maybeFetchTrackDetailsCmd(); cmd != nil {
-					return m, cmd
-				}
+				return m, tea.Batch(m.maybeFetchTrackDetailsCmd(), m.probeTracksCmd(m.currentTracks()))
 			}
 			return m, nil
 		}
 		if keyIs(key, m.keymap.Open) {
-			if m.focus == FocusList && m.listKind() == ListPlaylists && !m.showingPlaylistTracks() && len(m.currentPlaylists()) > 0 {
+			if m.listKind() == ListPlaylists && !m.showingPlaylistTracks() && len(m.currentPlaylists()) > 0 {
 				m.playlistTracks = true
 				m.playlistTracksSection = m.navIdx
 				m.trackIdx = 0
+				return m, m.probeTracksCmd(m.currentTracks())
 			}
 			return m, nil
 		}
@@ -245,7 +245,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if keyIs(key, m.keymap.Play) {
-			if m.focus == FocusList && m.navIdx != 0 {
+			if m.focus == FocusList {
+				if m.listKind() == ListTracks {
+					if t := m.selectedTrack(); t != nil {
+						badge := m.badgeForTrack(*t)
+						if badge == "blocked" || badge == "preview" {
+							m.setStatus("track blocked by SoundCloud API (preview-only)")
+							return m, nil
+						}
+					}
+				}
 				if m.playPending {
 					m.setStatus("player busy")
 					return m, nil
@@ -317,6 +326,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchErr = errText
 			m.setStatus("search failed")
 		}
+		return m, m.probeTracksCmd(m.searchTracks)
 	case actionResultMsg:
 		m.actionPromptActive = false
 		m.actionConfirmActive = false
@@ -383,6 +393,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.likedPlaylists = msg.likedPlaylists
 			m.likedPlaylistIDs = likedPlaylistMap(msg.likedPlaylists)
 		}
+		if msg.refreshMyPlaylists {
+			m.myPlaylists = msg.myPlaylists
+			if len(m.myPlaylists) == 0 {
+				m.playlistIdx = 0
+			} else if m.playlistIdx >= len(m.myPlaylists) {
+				m.playlistIdx = len(m.myPlaylists) - 1
+			}
+		}
 		if msg.errRefresh != nil {
 			m.setStatus("refresh failed: " + msg.errRefresh.Error())
 		}
@@ -392,11 +410,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.playPending = false
 		if msg.err != nil {
+			if msg.action == "play" && msg.trackID > 0 && isPreviewOnlyPlaybackError(msg.err.Error()) {
+				m.trackBadges[msg.trackID] = "preview"
+				m.setStatus("track blocked by SoundCloud API (preview-only)")
+				return m, nil
+			}
 			m.setStatus("Playback error: " + msg.err.Error())
 			return m, nil
 		}
 		if msg.state != nil {
 			m.applyDaemonState(msg.state)
+		}
+		if msg.action == "play" && msg.trackID > 0 {
+			m.trackBadges[msg.trackID] = "playable"
 		}
 		switch msg.action {
 		case "play":
@@ -439,9 +465,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.state != nil {
 			m.applyDaemonState(msg.state)
+			if msg.state.LastError != "" {
+				m.setStatus("Playback failed: " + msg.state.LastError)
+			}
 			if msg.state.Playing || msg.state.Paused {
 				return m, m.playTickCmd()
 			}
+		}
+	case trackProbeMsg:
+		delete(m.probeInFlight, msg.trackID)
+		if msg.trackID == 0 {
+			return m, nil
+		}
+		if msg.err != nil {
+			return m, nil
+		}
+		switch msg.badge {
+		case "playable", "preview", "blocked":
+			m.trackBadges[msg.trackID] = msg.badge
 		}
 	case trackDetailMsg:
 		if msg.err != nil {
@@ -450,4 +491,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyTrackDetail(msg.track)
 	}
 	return m, nil
+}
+
+func isPreviewOnlyPlaybackError(errText string) bool {
+	if errText == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(errText), "preview exists only")
 }
