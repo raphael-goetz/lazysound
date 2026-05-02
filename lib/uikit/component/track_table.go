@@ -22,7 +22,7 @@ func TrackTable(s style.Styles, tracks []api.Track, badges map[int]string, sel i
 		cellDisplay("Artist(s)", wArtist),
 		cellDisplay("Durtion", wDuration),
 		cellDisplay("BPM", wBPM),
-		cellDisplay("Badge", wBadge),
+		cellDisplay("Status", wBadge),
 	}, "  ")
 	header := s.Muted.Render(fitWidth(headerRow, width))
 	sep := s.Muted.Render(fitWidth(strings.Repeat("─", width), width))
