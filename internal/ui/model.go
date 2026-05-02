@@ -8,9 +8,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/raphael-goetz/lazysound/internal/api"
 	"github.com/raphael-goetz/lazysound/internal/daemon"
-	"github.com/raphael-goetz/lazysound/internal/ui/style"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
+	"github.com/raphael-goetz/lazysound/lib/uikit/style"
 )
 
 type SearchMode int

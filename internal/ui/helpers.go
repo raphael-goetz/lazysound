@@ -3,7 +3,7 @@ package ui
 import (
 	"math/rand"
 
-	"github.com/raphael-goetz/lazysound/internal/api"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 )
 
 func playlistTrackIDs(tracks []api.Track) []int {

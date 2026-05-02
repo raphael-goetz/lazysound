@@ -3,7 +3,7 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/raphael-goetz/lazysound/internal/ui"
-	"github.com/raphael-goetz/lazysound/internal/ui/style"
+	"github.com/raphael-goetz/lazysound/lib/uikit/style"
 )
 
 func NewProgram(data Bootstrap, cfg Config) *tea.Program {

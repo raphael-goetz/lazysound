@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/raphael-goetz/lazysound/internal/math"
-	"github.com/raphael-goetz/lazysound/internal/ui/component"
-	"github.com/raphael-goetz/lazysound/internal/ui/style"
+	"github.com/raphael-goetz/lazysound/lib/uikit/component"
+	"github.com/raphael-goetz/lazysound/lib/uikit/math"
+	"github.com/raphael-goetz/lazysound/lib/uikit/style"
 )
 
 func (m *Model) openActionMenu() {

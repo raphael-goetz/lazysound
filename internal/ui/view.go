@@ -2,8 +2,8 @@ package ui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/raphael-goetz/lazysound/internal/ui/component"
-	"github.com/raphael-goetz/lazysound/internal/ui/layout"
+	"github.com/raphael-goetz/lazysound/lib/uikit/component"
+	"github.com/raphael-goetz/lazysound/lib/uikit/layout"
 )
 
 func (m Model) View() string {

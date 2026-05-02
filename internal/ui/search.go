@@ -7,9 +7,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/raphael-goetz/lazysound/internal/api"
-	"github.com/raphael-goetz/lazysound/internal/ui/component"
-	"github.com/raphael-goetz/lazysound/internal/ui/style"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
+	"github.com/raphael-goetz/lazysound/lib/uikit/component"
+	"github.com/raphael-goetz/lazysound/lib/uikit/style"
 )
 
 func (m Model) renderSearchList(s style.Styles, width, height int) string {

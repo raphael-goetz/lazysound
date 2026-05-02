@@ -56,7 +56,7 @@ Example:
 
 ### 3) Authenticate (dev flow)
 Tokens are stored in the default token store (`~/.soundcli/token.json`).  
-Auth flow lives in `internal/api/auth.go` (`AuthCodePKCE`).
+Auth flow lives in `lib/soundcloud/auth.go` (`AuthCodePKCE`).
 
 ### 4) Run
 TUI:
@@ -83,6 +83,19 @@ go install ./cmd/lazysoundd
 go install ./cmd/lazysoundctl
 ```
 Ensure `~/go/bin` is in your `PATH`.
+
+## Workspace
+This repository now uses `go.work` with multiple modules:
+- root app module
+- `lib/soundcloud`
+- `lib/player`
+- `lib/uikit`
+
+Useful commands:
+```
+go work sync
+go build ./...
+```
 
 ## Architecture
 ```
@@ -117,14 +130,14 @@ Ensure `~/go/bin` is in your `PATH`.
         ▼                         ▼                          ▼
 ┌─────────────────────┐   ┌─────────────────────┐  ┌─────────────────────┐
 │      API Client     │   │     UI Components   │  │        Daemon       │
-│ internal/api/*      │   │ internal/ui/*       │  │ internal/daemon/*   │
+│ lib/soundcloud/*    │   │ lib/uikit/*         │  │ internal/daemon/*   │
 │ - SoundCloud HTTP   │   │ - tables/panes      │  │ - queue + mpv IPC   │
 └─────────────────────┘   └─────────────────────┘  └─────────────────────┘
                                                      │
                                                      ▼
                                               ┌───────────────────┐
                                               │      Player       │
-                                              │ internal/player/* │
+                                              │ lib/player/*      │
                                               │ - mpv process     │
                                               └───────────────────┘
 ```
@@ -135,10 +148,10 @@ Ensure `~/go/bin` is in your `PATH`.
 - `cmd/lazysoundctl/`: CLI controller for playback
 - `internal/app/`: config + bootstrap
 - `internal/ui/`: TUI state, rendering, and components
-- `internal/ui/layout/`: layout sizing helpers
+- `lib/soundcloud/`: SoundCloud API client + models
+- `lib/player/`: mpv control/IPC
+- `lib/uikit/`: shared render helpers (`component`, `style`, `layout`, `math`)
 - `internal/daemon/`: playback daemon + protocol
-- `internal/player/`: mpv IPC (Unix socket / Windows pipe)
-- `internal/api/`: SoundCloud API client + models
 
 ## Roadmap
 - Auth command (PKCE) wired to CLI

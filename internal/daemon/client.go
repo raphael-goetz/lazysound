@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/raphael-goetz/lazysound/internal/api"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 )
 
 const DefaultAddr = "127.0.0.1:7777"

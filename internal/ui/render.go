@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/raphael-goetz/lazysound/internal/api"
-	"github.com/raphael-goetz/lazysound/internal/math"
-	"github.com/raphael-goetz/lazysound/internal/ui/component"
-	"github.com/raphael-goetz/lazysound/internal/ui/style"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
+	"github.com/raphael-goetz/lazysound/lib/uikit/component"
+	"github.com/raphael-goetz/lazysound/lib/uikit/math"
+	"github.com/raphael-goetz/lazysound/lib/uikit/style"
 )
 
 // ---------- Header / Player / Cmd ----------

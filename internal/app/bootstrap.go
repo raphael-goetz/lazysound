@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raphael-goetz/lazysound/internal/api"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 )
 
 type Bootstrap struct {

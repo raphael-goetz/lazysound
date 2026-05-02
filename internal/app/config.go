@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/raphael-goetz/lazysound/internal/ui"
-	"github.com/raphael-goetz/lazysound/internal/ui/style"
+	"github.com/raphael-goetz/lazysound/lib/uikit/style"
 )
 
 type SoundCloudConfig struct {

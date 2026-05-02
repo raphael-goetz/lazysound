@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/raphael-goetz/lazysound/internal/api"
 	"github.com/raphael-goetz/lazysound/internal/app"
 	"github.com/raphael-goetz/lazysound/internal/daemon"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 )
 
 func main() {

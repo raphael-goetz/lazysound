@@ -1,6 +1,6 @@
 package daemon
 
-import "github.com/raphael-goetz/lazysound/internal/api"
+import api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 
 func chooseStreamURL(s *api.TrackStreams) string {
 	if s == nil {

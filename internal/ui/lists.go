@@ -5,7 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/raphael-goetz/lazysound/internal/api"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 )
 
 func (m Model) isPlaylistSection() bool {
