@@ -102,16 +102,16 @@ go build ./...
 ┌───────────────────────────────────────────────────────────────────────┐
 │                               lazysoundtui                            │
 │  cmd/lazysoundtui/main.go                                             │
-│  - load config                                                       │
-│  - init client + token                                               │
-│  - fetch initial data                                                │
-│  - start TUI                                                         │
+│  - load config                                                        │
+│  - init client + token                                                │
+│  - fetch initial data                                                 │
+│  - start TUI                                                          │
 └───────────────────────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌───────────────────────────────────────────────────────────────────────┐
 │                                bootstrap                              │
-│  internal/app/bootstrap.go                                             │
+│  internal/app/bootstrap.go                                            │
 │  - init client                                                        │
 │  - fetch initial data in parallel                                     │
 └───────────────────────────────────────────────────────────────────────┘
@@ -119,10 +119,10 @@ go build ./...
                          ▼
 ┌───────────────────────────────────────────────────────────────────────┐
 │                                 UI                                    │
-│  internal/ui/model.go                                                  │
-│  - navigation + list selection                                         │
+│  internal/ui/model.go                                                 │
+│  - navigation + list selection                                        │
 │  - search state                                                       │
-│  - quick actions state                                                 │
+│  - quick actions state                                                │
 │  - playback state                                                     │
 │  - renders panes + info                                                │
 └───────────────────────────────────────────────────────────────────────┘
