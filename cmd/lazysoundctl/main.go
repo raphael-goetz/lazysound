@@ -10,6 +10,7 @@ import (
 
 	"github.com/raphael-goetz/lazysound/internal/app"
 	"github.com/raphael-goetz/lazysound/internal/daemon"
+	api "github.com/raphael-goetz/lazysound/lib/soundcloud"
 )
 
 func main() {
@@ -36,6 +37,36 @@ func main() {
 	)
 
 	switch cmd {
+	case "auth":
+		apiClient, err := newAPIClient(cfg)
+		if err != nil {
+			die(err.Error())
+		}
+		authCtx, authCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer authCancel()
+		tok, err := apiClient.AuthCodePKCE(authCtx)
+		if err != nil {
+			die("auth failed: " + err.Error())
+		}
+		fmt.Printf("auth ok (expires_at=%s)\n", tok.ExpiresAt.Format(time.RFC3339))
+		return
+	case "whoami":
+		apiClient, err := newAPIClient(cfg)
+		if err != nil {
+			die(err.Error())
+		}
+		whoCtx, whoCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer whoCancel()
+		tok, err := apiClient.EnsureValidToken(whoCtx)
+		if err != nil {
+			die("token invalid: " + err.Error())
+		}
+		user, err := apiClient.MeUser(whoCtx, tok.AccessToken)
+		if err != nil {
+			die("whoami failed: " + err.Error())
+		}
+		fmt.Printf("user=%s id=%d expires_at=%s\n", user.Username, user.ID, tok.ExpiresAt.Format(time.RFC3339))
+		return
 	case "status":
 		state, err = client.Status(ctx)
 	case "pause":
@@ -135,12 +166,30 @@ func mustConfigPath() string {
 
 func usage() {
 	fmt.Println("usage:")
+	fmt.Println("  lazysoundctl auth")
+	fmt.Println("  lazysoundctl whoami")
 	fmt.Println("  lazysoundctl status")
 	fmt.Println("  lazysoundctl pause|stop|restart|next|prev")
 	fmt.Println("  lazysoundctl seek <seconds>")
 	fmt.Println("  lazysoundctl volume <0-100>")
 	fmt.Println("  lazysoundctl shuffle <true|false>")
 	fmt.Println("  lazysoundctl repeat <true|false>")
+}
+
+func newAPIClient(cfg app.Config) (*api.ApiClient, error) {
+	if !cfg.HasSoundCloud() {
+		return nil, fmt.Errorf("soundcloud config missing in %s", mustConfigPath())
+	}
+	store, err := api.NewTokenStoreDefault()
+	if err != nil {
+		return nil, err
+	}
+	return api.NewApiClient(api.ApiConfig{
+		ClientID:     cfg.SoundCloud.ClientID,
+		ClientSecret: cfg.SoundCloud.ClientSecret,
+		RedirectURI:  cfg.SoundCloud.RedirectURI,
+		Scope:        cfg.SoundCloud.Scope,
+	}, store), nil
 }
 
 func die(msg string) {
