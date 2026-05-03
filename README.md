@@ -2,6 +2,8 @@
 
 LazySound is a terminal UI for SoundCloud: browse, search, manage playlists, and play tracks through an mpv‑backed daemon so playback survives TUI restarts.
 
+<img width="1917" height="1040" alt="Screenshot 2026-05-02 at 14 41 59" src="https://github.com/user-attachments/assets/9aae7b22-6e20-49b6-892b-439b18b4b896" />
+
 ## Features
 - Browse **My Tracks**, **Liked Tracks**, **My Playlists**, **Liked Playlists**
 - Search tracks and playlists
