@@ -7,5 +7,5 @@ import (
 )
 
 func main() {
-	os.Exit(entrypoints.RunDaemon(os.Stderr))
+	os.Exit(entrypoints.Run(os.Args[1:], os.Stdout, os.Stderr))
 }
